@@ -1,0 +1,17 @@
+# Participant conversation logs (contains personal data)
+logs/*.json
+
+# Exported data files
+data/
+
+# Python cache
+__pycache__/
+
+# Environment variables (may contain secrets)
+.env
+
+# Virtual environment
+venv/
+
+# Streamlit secrets
+.streamlit/secrets.toml
