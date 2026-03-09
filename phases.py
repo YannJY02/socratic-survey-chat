@@ -86,6 +86,30 @@ def advance_phase(session_state) -> None:
         })
 
 
+def go_back_phase(session_state) -> None:
+    """Move back to the previous phase, recording timestamps in the phase log."""
+    if session_state.current_phase_index <= 0:
+        return
+
+    now = _utc_now_iso()
+
+    # Close the current phase entry.
+    if session_state.phase_log:
+        session_state.phase_log[-1]["phase_end"] = now
+
+    session_state.current_phase_index -= 1
+
+    # Open a new entry for the revisited phase.
+    sequence = get_phase_sequence(session_state.condition)
+    idx = session_state.current_phase_index
+    session_state.phase_log.append({
+        "phase_name": sequence[idx].value,
+        "phase_order": idx + 1,
+        "phase_start": now,
+        "phase_end": None,
+    })
+
+
 def start_first_phase(session_state) -> None:
     """Record the first phase entry in phase_log."""
     sequence = get_phase_sequence(session_state.condition)

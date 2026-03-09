@@ -1,5 +1,5 @@
 """
-LLM abstraction layer supporting Ollama (local dev) and OpenAI (production).
+LLM abstraction layer supporting Ollama, OpenAI, OpenRouter, and Google Gemini.
 
 This module provides a unified interface for sending chat messages and
 streaming responses, capturing per-response metadata (token count, latency)
@@ -32,6 +32,7 @@ def stream_chat(
     model: str | None = None,
     temperature: float | None = None,
     api_key: str | None = None,
+    base_url: str | None = None,
 ) -> LLMResponse:
     """Send messages to the configured LLM backend, stream into placeholder.
 
@@ -44,6 +45,8 @@ def stream_chat(
     backend, model, temperature, api_key
         Optional overrides (used by dev-mode sidebar). Falls back to
         ``config.*`` / env-var defaults when *None*.
+    base_url
+        Optional base URL override (used for OpenRouter).
 
     Returns
     -------
@@ -57,6 +60,21 @@ def stream_chat(
 
     if effective_backend == "openai":
         return _stream_openai(
+            messages, placeholder, start_time,
+            model=effective_model,
+            temperature=effective_temperature,
+            api_key=api_key,
+        )
+    if effective_backend == "openrouter":
+        return _stream_openai(
+            messages, placeholder, start_time,
+            model=effective_model,
+            temperature=effective_temperature,
+            api_key=api_key or config.OPENROUTER_API_KEY or None,
+            base_url=base_url or config.OPENROUTER_BASE_URL,
+        )
+    if effective_backend == "gemini":
+        return _stream_gemini(
             messages, placeholder, start_time,
             model=effective_model,
             temperature=effective_temperature,
@@ -137,11 +155,21 @@ def _stream_openai(
     model: str,
     temperature: float,
     api_key: str | None = None,
+    base_url: str | None = None,
 ) -> LLMResponse:
-    """Stream a response from the OpenAI API."""
+    """Stream a response from an OpenAI-compatible API.
+
+    When *base_url* is provided the client points at that endpoint instead of
+    the default ``api.openai.com`` — used for OpenRouter and similar services.
+    """
     import openai
 
-    client = openai.OpenAI(api_key=api_key) if api_key else openai.OpenAI()
+    client_kwargs: dict = {}
+    if api_key:
+        client_kwargs["api_key"] = api_key
+    if base_url:
+        client_kwargs["base_url"] = base_url
+    client = openai.OpenAI(**client_kwargs)
     full_response = ""
     token_count = 0
 
@@ -166,6 +194,73 @@ def _stream_openai(
     except Exception as exc:
         if not full_response:
             full_response = f"OpenAI API error: {exc}"
+
+    placeholder.markdown(full_response)
+    latency_ms = int((time.perf_counter() - start_time) * 1000)
+
+    return LLMResponse(
+        full_text=full_response,
+        token_count=token_count,
+        latency_ms=latency_ms,
+    )
+
+
+def _stream_gemini(
+    messages: list[dict],
+    placeholder,
+    start_time: float,
+    *,
+    model: str,
+    temperature: float,
+    api_key: str | None = None,
+) -> LLMResponse:
+    """Stream a response from the Google Gemini API."""
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key or config.GEMINI_API_KEY)
+
+    # Separate the system instruction from conversational turns.
+    system_instruction: str | None = None
+    contents: list[types.Content] = []
+
+    for msg in messages:
+        role = msg["role"]
+        text = msg["content"]
+        if role == "system":
+            system_instruction = text
+        else:
+            # Gemini uses "model" where OpenAI uses "assistant".
+            gemini_role = "model" if role == "assistant" else "user"
+            contents.append(
+                types.Content(
+                    role=gemini_role,
+                    parts=[types.Part.from_text(text=text)],
+                ),
+            )
+
+    generation_config = types.GenerateContentConfig(
+        temperature=temperature,
+    )
+    if system_instruction:
+        generation_config.system_instruction = system_instruction
+
+    full_response = ""
+    token_count = 0
+
+    try:
+        stream = client.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=generation_config,
+        )
+        for chunk in stream:
+            if chunk.text:
+                full_response += chunk.text
+                placeholder.markdown(full_response + "▌")
+    except Exception as exc:
+        if not full_response:
+            full_response = f"Gemini API error: {exc}"
 
     placeholder.markdown(full_response)
     latency_ms = int((time.perf_counter() - start_time) * 1000)
