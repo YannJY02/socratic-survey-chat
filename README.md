@@ -56,6 +56,88 @@ streamlit run app.py
 
 For detailed instructions, see [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md).
 
+## LLM Backend Configuration
+
+The application supports multiple LLM backends:
+
+| Backend | Description | Use Case |
+|---------|-------------|----------|
+| **Ollama** | Local model inference | Development, privacy-sensitive research |
+| **OpenAI** | OpenAI API (GPT-4, etc.) | Production with commercial models |
+| **OpenRouter** | Unified API for multiple providers | Access to Gemini, Claude, DeepSeek, etc. |
+| **Gemini** | Google Gemini API | Direct Gemini integration |
+
+### Local Development Setup
+
+1. Copy `.env.example` to `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit `.env` and configure your backend:
+   ```bash
+   # For Ollama (default, no API key needed)
+   BACKEND=ollama
+   MODEL=eurecom-ds/phi-3-mini-4k-socratic
+
+   # For OpenAI
+   # BACKEND=openai
+   # MODEL=gpt-4o
+   # OPENAI_API_KEY=sk-proj-...
+
+   # For OpenRouter
+   # BACKEND=openrouter
+   # MODEL=google/gemini-2.5-flash
+   # OPENROUTER_API_KEY=sk-or-v1-...
+
+   # For Gemini
+   # BACKEND=gemini
+   # MODEL=gemini-2.5-flash
+   # GEMINI_API_KEY=AIzaSy...
+   ```
+
+3. Enable dev mode to test different backends in the sidebar:
+   ```bash
+   DEV_MODE=true
+   ```
+
+### Streamlit Cloud Deployment
+
+When deploying to Streamlit Cloud, **do not commit API keys to GitHub**. Instead, use Streamlit's Secrets management:
+
+1. Push your code to GitHub (`.env` is git-ignored automatically)
+
+2. Go to [share.streamlit.io](https://share.streamlit.io) and deploy your app
+
+3. In the app dashboard, click **Settings** → **Secrets**
+
+4. Add your secrets in TOML format:
+   ```toml
+   # LLM Backend Configuration
+   BACKEND = "openrouter"
+   MODEL = "google/gemini-2.5-flash"
+   TEMPERATURE = "0.3"
+
+   # API Keys (uncomment the one you need)
+   # OPENAI_API_KEY = "sk-proj-..."
+   OPENROUTER_API_KEY = "sk-or-v1-..."
+   # GEMINI_API_KEY = "AIzaSy..."
+
+   # Qualtrics URLs
+   QUALTRICS_POST_SURVEY_URL = "https://fra1.qualtrics.com/jfe/form/SV_...?pid={pid}&wave=post&condition={condition}"
+   QUALTRICS_DEBRIEFING_URL = "https://your-institution.qualtrics.com/jfe/form/YOUR_DEBRIEF_ID?pid={pid}"
+   ```
+
+5. Click **Save** — Streamlit will automatically restart your app with the new secrets
+
+**Note:** Streamlit Cloud reads secrets from `st.secrets` (TOML format), while local development uses `.env` files. The `config.py` module handles both automatically via `python-dotenv` and Streamlit's secrets API.
+
+### Getting API Keys
+
+- **OpenAI:** [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- **OpenRouter:** [openrouter.ai/keys](https://openrouter.ai/keys) (supports 200+ models including free tiers)
+- **Gemini:** [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+
 ## Project Structure
 
 ```

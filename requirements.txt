@@ -3,3 +3,5 @@ ollama
 openai
 pandas
 requests
+google-genai
+python-dotenv

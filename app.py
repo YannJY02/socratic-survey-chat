@@ -41,6 +41,15 @@ def _parse_query_params() -> tuple[str, str]:
     return pid, condition
 
 
+def _clear_current_phase_data(phase: Phase) -> None:
+    """Clear collected data for the current phase so it can be re-entered."""
+    if phase == Phase.CL_POST_INSTRUCTION:
+        st.session_state.cl_responses.pop("post_instruction", None)
+    elif phase == Phase.CL_POST_CHAT:
+        st.session_state.cl_responses.pop("post_chat", None)
+        st.session_state.checks = {}
+
+
 # ── Session-state initialisation ────────────────────────────────────────────
 
 def _init_session() -> None:
@@ -222,6 +231,13 @@ def render_chat_phase() -> None:
                 "latency_ms": response.latency_ms,
             })
 
+            # If this was the last allowed turn, rerun so the UI refreshes
+            # to show all messages (including the LLM response above) in the
+            # proper "all turns used" state instead of the stale layout.
+            new_student_turns = sum(1 for m in messages if m["role"] == "user")
+            if new_student_turns >= config.TURNS_PER_SCENARIO:
+                st.rerun()
+
 
 def render_cl_phase(phase_type: str) -> None:
     """Render a CL inventory phase.
@@ -318,26 +334,62 @@ def main() -> None:
         if config.DEV_MODE:
             st.divider()
             st.markdown("**Dev Controls**")
+
+            # Backend selector.
+            backends = config.SUPPORTED_BACKENDS
+            current_backend = st.session_state.get("dev_backend", config.BACKEND)
+            backend_index = (
+                backends.index(current_backend)
+                if current_backend in backends
+                else 0
+            )
             st.session_state.dev_backend = st.selectbox(
                 "Backend",
-                ["ollama", "openai"],
-                index=["ollama", "openai"].index(
-                    st.session_state.get("dev_backend", config.BACKEND)
-                ),
+                backends,
+                index=backend_index,
                 key="sel_dev_backend",
             )
-            st.session_state.dev_model = st.text_input(
+
+            # Model selector (curated list + custom option).
+            backend = st.session_state.dev_backend
+            model_options = config.MODEL_OPTIONS.get(backend, [])
+            options_with_custom = model_options + ["Other (custom)"]
+
+            current_model = st.session_state.get("dev_model", config.MODEL)
+            if current_model in options_with_custom:
+                model_index = options_with_custom.index(current_model)
+            else:
+                model_index = 0
+
+            selected_model = st.selectbox(
                 "Model",
-                value=st.session_state.get("dev_model", config.MODEL),
-                key="inp_dev_model",
+                options_with_custom,
+                index=model_index,
+                key="sel_dev_model",
             )
-            if st.session_state.dev_backend == "openai":
+            if selected_model == "Other (custom)":
+                st.session_state.dev_model = st.text_input(
+                    "Custom model ID",
+                    value=st.session_state.get("dev_model", ""),
+                    key="inp_dev_model_custom",
+                )
+            else:
+                st.session_state.dev_model = selected_model
+
+            # API key (shown for all backends except ollama).
+            if backend != "ollama":
+                key_labels = {
+                    "openai": "OpenAI",
+                    "openrouter": "OpenRouter",
+                    "gemini": "Gemini",
+                }
                 st.session_state.dev_api_key = st.text_input(
-                    "OpenAI API key",
+                    f"{key_labels[backend]} API key",
                     type="password",
                     value=st.session_state.get("dev_api_key", ""),
                     key="inp_dev_api_key",
                 )
+
             st.session_state.dev_temperature = st.slider(
                 "Temperature",
                 min_value=0.0,
@@ -346,6 +398,14 @@ def main() -> None:
                 step=0.1,
                 key="sld_dev_temperature",
             )
+
+        # ── Back button (visible when past the first phase) ──────────
+        if current_idx > 0 and phase != Phase.REDIRECT and not st.session_state.finished:
+            st.divider()
+            if st.button("\u2190 Back to previous step", key="btn_back"):
+                _clear_current_phase_data(phase)
+                phases.go_back_phase(st.session_state)
+                st.rerun()
 
         # Withdrawal mechanism (visible throughout all phases except redirect).
         if phase != Phase.REDIRECT and not st.session_state.finished:
