@@ -24,7 +24,15 @@ class LLMResponse:
     latency_ms: int
 
 
-def stream_chat(messages: list[dict], placeholder) -> LLMResponse:
+def stream_chat(
+    messages: list[dict],
+    placeholder,
+    *,
+    backend: str | None = None,
+    model: str | None = None,
+    temperature: float | None = None,
+    api_key: str | None = None,
+) -> LLMResponse:
     """Send messages to the configured LLM backend, stream into placeholder.
 
     Parameters
@@ -33,32 +41,49 @@ def stream_chat(messages: list[dict], placeholder) -> LLMResponse:
         OpenAI-style message list (role/content pairs).
     placeholder
         A Streamlit ``st.empty()`` widget for incremental display.
+    backend, model, temperature, api_key
+        Optional overrides (used by dev-mode sidebar). Falls back to
+        ``config.*`` / env-var defaults when *None*.
 
     Returns
     -------
     LLMResponse
         The complete response with metadata.
     """
-    backend = config.BACKEND
+    effective_backend = backend or config.BACKEND
+    effective_model = model or config.MODEL
+    effective_temperature = temperature if temperature is not None else config.TEMPERATURE
     start_time = time.perf_counter()
 
-    if backend == "openai":
-        return _stream_openai(messages, placeholder, start_time)
-    return _stream_ollama(messages, placeholder, start_time)
+    if effective_backend == "openai":
+        return _stream_openai(
+            messages, placeholder, start_time,
+            model=effective_model,
+            temperature=effective_temperature,
+            api_key=api_key,
+        )
+    return _stream_ollama(
+        messages, placeholder, start_time,
+        model=effective_model,
+        temperature=effective_temperature,
+    )
 
 
 def _stream_ollama(
     messages: list[dict],
     placeholder,
     start_time: float,
+    *,
+    model: str,
+    temperature: float,
 ) -> LLMResponse:
     """Stream a response from Ollama."""
     url = f"{config.OLLAMA_HOST}/api/chat"
     payload = {
-        "model": config.MODEL,
+        "model": model,
         "messages": messages,
         "stream": True,
-        "options": {"temperature": config.TEMPERATURE},
+        "options": {"temperature": temperature},
     }
 
     full_response = ""
@@ -108,19 +133,23 @@ def _stream_openai(
     messages: list[dict],
     placeholder,
     start_time: float,
+    *,
+    model: str,
+    temperature: float,
+    api_key: str | None = None,
 ) -> LLMResponse:
     """Stream a response from the OpenAI API."""
     import openai
 
-    client = openai.OpenAI()
+    client = openai.OpenAI(api_key=api_key) if api_key else openai.OpenAI()
     full_response = ""
     token_count = 0
 
     try:
         stream = client.chat.completions.create(
-            model=config.MODEL,
+            model=model,
             messages=messages,
-            temperature=config.TEMPERATURE,
+            temperature=temperature,
             stream=True,
             stream_options={"include_usage": True},
         )

@@ -1,11 +1,12 @@
 # Participant conversation logs (contains personal data)
-logs/*.json
+logs/
 
 # Exported data files
 data/
 
 # Python cache
 __pycache__/
+*.pyc
 
 # Environment variables (may contain secrets)
 .env
@@ -15,3 +16,7 @@ venv/
 
 # Streamlit secrets
 .streamlit/secrets.toml
+
+# Qualtrics generated output
+qualtrics/output/
+qualtrics/.env

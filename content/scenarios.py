@@ -20,6 +20,16 @@ class Scenario:
     text: str
 
 
+CHAT_TASK_PROMPT: str = (
+    "In this activity, you will read three short research scenarios one at a time. "
+    "For each scenario, discuss with the AI tutor to critically evaluate the "
+    "researchers\u2019 conclusions. Consider what the study design allows you to "
+    "conclude and what alternative explanations might exist.\n\n"
+    "There are no right or wrong answers \u2014 the goal is to think through "
+    "the reasoning carefully."
+)
+
+
 SCENARIOS: tuple[Scenario, ...] = (
     Scenario(
         id="S1",

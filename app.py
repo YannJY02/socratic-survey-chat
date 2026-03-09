@@ -90,6 +90,24 @@ def _build_system_prompt(scenario_text: str) -> str:
     return template.replace("[SCENARIO_TEXT]", scenario_text)
 
 
+def render_welcome_phase() -> None:
+    """Render the welcome / task introduction page."""
+    st.subheader("Welcome")
+    st.markdown(
+        "Welcome to this learning activity about **causal inference in "
+        "communication research**.\n\n"
+        "In this session, you will:\n"
+        "- Read instructional material about research methodology\n"
+        "- Discuss research scenarios with an AI tutor\n"
+        "- Answer a few short questionnaires\n\n"
+        "The entire session takes approximately 30\u201340 minutes. "
+        "Please complete it in one sitting."
+    )
+    if st.button("Begin", key="btn_welcome"):
+        phases.advance_phase(st.session_state)
+        st.rerun()
+
+
 def render_instruction_phase() -> None:
     """Render the instruction module page with causal-inference content."""
     from content.instruction import INSTRUCTION_TEXT
@@ -104,10 +122,15 @@ def render_instruction_phase() -> None:
 
 def render_chat_phase() -> None:
     """Render the 3-scenario Socratic AI chat interface."""
-    from content.scenarios import SCENARIOS
+    from content.scenarios import CHAT_TASK_PROMPT, SCENARIOS
 
     scenario_idx: int = st.session_state.current_scenario_index
     scenario = SCENARIOS[scenario_idx]
+
+    # ── Task guidance (shown once, before S1, before any messages) ─
+    messages: list[dict] = st.session_state.scenario_messages[scenario_idx]
+    if scenario_idx == 0 and not messages:
+        st.info(CHAT_TASK_PROMPT)
 
     # ── Scenario description ─────────────────────────────────────────
     with st.container(border=True):
@@ -115,7 +138,6 @@ def render_chat_phase() -> None:
         st.markdown(scenario.text)
 
     # ── Per-scenario message history ─────────────────────────────────
-    messages: list[dict] = st.session_state.scenario_messages[scenario_idx]
 
     # Display existing messages.
     for msg in messages:
@@ -126,46 +148,40 @@ def render_chat_phase() -> None:
     student_turns = sum(1 for m in messages if m["role"] == "user")
     turns_remaining = config.TURNS_PER_SCENARIO - student_turns
 
+    def _save_and_advance_scenario() -> None:
+        """Save the current scenario log entry and advance to next scenario or phase."""
+        st.session_state.scenarios.append({
+            "scenario_id": scenario.id,
+            "scenario_order": scenario.order,
+            "scenario_start": (
+                messages[0]["timestamp"] if messages else _utc_now_iso()
+            ),
+            "scenario_end": _utc_now_iso(),
+            "student_turns": student_turns,
+            "messages": messages,
+        })
+        if scenario_idx < 2:
+            st.session_state.current_scenario_index += 1
+        else:
+            phases.advance_phase(st.session_state)
+        st.rerun()
+
     if turns_remaining <= 0:
         # All turns used — show transition controls.
         st.info(
             f"You have used all {config.TURNS_PER_SCENARIO} messages "
             "for this scenario.",
         )
-        if scenario_idx < 2:
-            if st.button(
-                "Continue to next scenario",
-                key=f"btn_next_scenario_{scenario_idx}",
-            ):
-                st.session_state.scenarios.append({
-                    "scenario_id": scenario.id,
-                    "scenario_order": scenario.order,
-                    "scenario_start": (
-                        messages[0]["timestamp"] if messages else _utc_now_iso()
-                    ),
-                    "scenario_end": _utc_now_iso(),
-                    "student_turns": student_turns,
-                    "messages": messages,
-                })
-                st.session_state.current_scenario_index += 1
-                st.rerun()
-        else:
-            # After S3 — save log and advance to next phase.
-            if st.button("Continue", key="btn_chat_done"):
-                st.session_state.scenarios.append({
-                    "scenario_id": scenario.id,
-                    "scenario_order": scenario.order,
-                    "scenario_start": (
-                        messages[0]["timestamp"] if messages else _utc_now_iso()
-                    ),
-                    "scenario_end": _utc_now_iso(),
-                    "student_turns": student_turns,
-                    "messages": messages,
-                })
-                phases.advance_phase(st.session_state)
-                st.rerun()
+        label = "Continue to next scenario" if scenario_idx < 2 else "Continue"
+        key = f"btn_next_scenario_{scenario_idx}" if scenario_idx < 2 else "btn_chat_done"
+        if st.button(label, key=key):
+            _save_and_advance_scenario()
     else:
         st.caption(f"Messages remaining for this scenario: {turns_remaining}")
+        # ── Early exit (after minimum engagement) ─────────────────
+        if student_turns >= config.MIN_TURNS_PER_SCENARIO:
+            if st.button("I'm ready to move on", key=f"btn_early_exit_{scenario_idx}"):
+                _save_and_advance_scenario()
 
     # ── Chat input (only while turns remain) ─────────────────────────
     if turns_remaining > 0:
@@ -190,7 +206,14 @@ def render_chat_phase() -> None:
             import llm
             with st.chat_message("assistant"):
                 placeholder = st.empty()
-                response = llm.stream_chat(llm_messages, placeholder)
+                response = llm.stream_chat(
+                    llm_messages,
+                    placeholder,
+                    backend=st.session_state.get("dev_backend"),
+                    model=st.session_state.get("dev_model"),
+                    temperature=st.session_state.get("dev_temperature"),
+                    api_key=st.session_state.get("dev_api_key"),
+                )
             messages.append({
                 "role": "assistant",
                 "content": response.full_text,
@@ -260,7 +283,10 @@ def render_redirect() -> None:
         st.caption(f"Session log: {filepath.name}")
 
     redirect_url = (
-        config.QUALTRICS_POST_SURVEY_URL.format(pid=st.session_state.pid)
+        config.QUALTRICS_POST_SURVEY_URL.format(
+            pid=st.session_state.pid,
+            condition=st.session_state.condition,
+        )
         + "&phase_completed=true"
     )
     st.markdown(
@@ -288,6 +314,39 @@ def main() -> None:
         st.markdown(f"**Current phase:** {phase.value}")
         st.progress(min(current_idx / total_phases, 1.0))
 
+        # ── Dev-mode controls ────────────────────────────────────────
+        if config.DEV_MODE:
+            st.divider()
+            st.markdown("**Dev Controls**")
+            st.session_state.dev_backend = st.selectbox(
+                "Backend",
+                ["ollama", "openai"],
+                index=["ollama", "openai"].index(
+                    st.session_state.get("dev_backend", config.BACKEND)
+                ),
+                key="sel_dev_backend",
+            )
+            st.session_state.dev_model = st.text_input(
+                "Model",
+                value=st.session_state.get("dev_model", config.MODEL),
+                key="inp_dev_model",
+            )
+            if st.session_state.dev_backend == "openai":
+                st.session_state.dev_api_key = st.text_input(
+                    "OpenAI API key",
+                    type="password",
+                    value=st.session_state.get("dev_api_key", ""),
+                    key="inp_dev_api_key",
+                )
+            st.session_state.dev_temperature = st.slider(
+                "Temperature",
+                min_value=0.0,
+                max_value=1.0,
+                value=st.session_state.get("dev_temperature", config.TEMPERATURE),
+                step=0.1,
+                key="sld_dev_temperature",
+            )
+
         # Withdrawal mechanism (visible throughout all phases except redirect).
         if phase != Phase.REDIRECT and not st.session_state.finished:
             st.divider()
@@ -312,6 +371,8 @@ def main() -> None:
 
     # ── Phase dispatch ──────────────────────────────────────────────────
     match phase:
+        case Phase.WELCOME:
+            render_welcome_phase()
         case Phase.INSTRUCTION:
             render_instruction_phase()
         case Phase.AI_CHAT:

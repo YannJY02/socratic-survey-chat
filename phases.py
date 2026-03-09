@@ -11,6 +11,7 @@ from enum import Enum
 
 
 class Phase(Enum):
+    WELCOME = "welcome"
     INSTRUCTION = "instruction"
     CL_POST_INSTRUCTION = "cl_post_instruction"
     AI_CHAT = "ai_chat"
@@ -21,6 +22,7 @@ class Phase(Enum):
 # Condition -> ordered list of phases.
 CONDITION_SEQUENCES: dict[str, list[Phase]] = {
     "I_PS": [
+        Phase.WELCOME,
         Phase.INSTRUCTION,
         Phase.CL_POST_INSTRUCTION,
         Phase.AI_CHAT,
@@ -28,6 +30,7 @@ CONDITION_SEQUENCES: dict[str, list[Phase]] = {
         Phase.REDIRECT,
     ],
     "PS_I": [
+        Phase.WELCOME,
         Phase.AI_CHAT,
         Phase.CL_POST_CHAT,
         Phase.INSTRUCTION,

@@ -23,6 +23,12 @@ LOG_DIR: Path = BASE_DIR / "logs"
 SYSTEM_PROMPT_PATH: Path = BASE_DIR / "prompts" / "socratic_domain.txt"
 
 # ---------------------------------------------------------------------------
+# Developer mode
+# ---------------------------------------------------------------------------
+# When True, a sidebar panel allows switching backend / model at runtime.
+DEV_MODE: bool = os.environ.get("DEV_MODE", "false").lower() == "true"
+
+# ---------------------------------------------------------------------------
 # LLM backend settings
 # ---------------------------------------------------------------------------
 # Backend selector: "ollama" (local dev) or "openai" (production).
@@ -43,6 +49,9 @@ TEMPERATURE: float = float(os.environ.get("TEMPERATURE", "0.3"))
 # Maximum student turns *per scenario* during the AI chat phase.
 TURNS_PER_SCENARIO: int = 7
 
+# Minimum student turns before the "move on" button appears.
+MIN_TURNS_PER_SCENARIO: int = 2
+
 # Legacy — kept for backward-compat; not used by the new phase router.
 MAX_TURNS: int = 20
 
@@ -54,10 +63,12 @@ SCENARIO_IDS: tuple[str, ...] = ("S1", "S2", "S3")
 # ---------------------------------------------------------------------------
 # Qualtrics integration
 # ---------------------------------------------------------------------------
-# Post-session survey URL.  {pid} is replaced at runtime.
+# Post-session survey URL.  {pid} and {condition} are replaced at runtime.
+# Uses single-survey two-wave architecture: wave=post triggers post-survey blocks.
 QUALTRICS_POST_SURVEY_URL: str = os.environ.get(
     "QUALTRICS_POST_SURVEY_URL",
-    "https://your-institution.qualtrics.com/jfe/form/YOUR_SURVEY_ID?pid={pid}",
+    "https://fra1.qualtrics.com/jfe/form/SV_37uMu9WF3PngHFI"
+    "?pid={pid}&wave=post&condition={condition}",
 )
 
 # Debriefing URL for withdrawn participants.
